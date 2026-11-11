@@ -481,3 +481,120 @@ function formatTime_(value) {
     "yyyy/MM/dd HH:mm:ss"
   );
 }
+
+/**
+ * 匯入 52 台設備並自動建立 QR Code
+ * 執行一次即可；不會刪除既有借還紀錄。
+ */
+function importEquipmentList() {
+  const ss = getSpreadsheet_();
+  const sheet = getEquipmentSheet_(ss);
+  getRecordSheet_(ss);
+
+  const headers = ["設備編號", "設備名稱", "設備狀態", "QR Code", "廠牌"];
+
+  if (sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, 5).setValues([headers]);
+    formatHeader_(sheet, 5);
+  }
+
+  const devices = [];
+
+  // 1001～1013：ASUS M640C
+  for (let id = 1001; id <= 1013; id++) {
+    devices.push([String(id), "M640C", "ASUS"]);
+  }
+
+  // 2023～2033：APPLE 平板電腦
+  for (let id = 2023; id <= 2033; id++) {
+    devices.push([String(id), "平板電腦", "APPLE"]);
+  }
+
+  // 3007～3012：ACER 筆記型電腦
+  for (let id = 3007; id <= 3012; id++) {
+    devices.push([String(id), "筆記型電腦", "ACER"]);
+  }
+
+  // 3013～3017：Apple 桌上型電腦
+  for (let id = 3013; id <= 3017; id++) {
+    devices.push([String(id), "桌上型電腦", "Apple"]);
+  }
+
+  // 2051～2067：mini
+  for (let id = 2051; id <= 2067; id++) {
+    devices.push([String(id), "mini", "mini"]);
+  }
+
+  sheet.getRange("A:A").setNumberFormat("@");
+  sheet.getRange("D:D").setNumberFormat("@");
+
+  // 建立既有設備編號對照表
+  const existing = {};
+  const lastRow = sheet.getLastRow();
+
+  if (lastRow >= 2) {
+    const oldData = sheet.getRange(2, 1, lastRow - 1, 5)
+      .getDisplayValues();
+
+    oldData.forEach((row, index) => {
+      const id = String(row[0]).trim();
+      if (id && !existing[id]) {
+        existing[id] = index + 2;
+      }
+    });
+  }
+
+  let added = 0;
+  let updated = 0;
+
+  devices.forEach(device => {
+    const id = device[0];
+    const name = device[1];
+    const brand = device[2];
+
+    let row = existing[id];
+
+    if (row) {
+      // 更新名稱及廠牌，不覆蓋既有設備狀態
+      sheet.getRange(row, 2).setValue(name);
+      sheet.getRange(row, 5).setValue(brand);
+
+      if (!sheet.getRange(row, 3).getDisplayValue()) {
+        sheet.getRange(row, 3).setValue(CONFIG.AVAILABLE);
+      }
+
+      updated++;
+    } else {
+      // 新增設備
+      sheet.appendRow([
+        id,
+        name,
+        CONFIG.AVAILABLE,
+        "",
+        brand
+      ]);
+
+      row = sheet.getLastRow();
+      added++;
+      existing[id] = row;
+    }
+
+    // D 欄自動產生 QR Code 圖片
+    sheet.getRange(row, 4).setFormula(
+      '=IMAGE("https://quickchart.io/qr?text="&ENCODEURL(A' +
+      row +
+      ')&"&size=250&margin=2")'
+    );
+  });
+
+  sheet.setColumnWidth(1, 110);
+  sheet.setColumnWidth(2, 150);
+  sheet.setColumnWidth(3, 110);
+  sheet.setColumnWidth(4, 180);
+  sheet.setColumnWidth(5, 110);
+
+  SpreadsheetApp.flush();
+
+  return "設備匯入完成！共處理 " + devices.length +
+    " 台設備；新增 " + added + " 台，更新 " + updated + " 台。";
+}
